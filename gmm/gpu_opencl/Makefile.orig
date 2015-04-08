@@ -1,0 +1,23 @@
+OS := $(shell uname)
+OPTIONS:= 
+
+ifeq ($(OS),Darwin)
+	OPTIONS += -framework OpenCL
+else
+	OPTIONS += -I/opt/AMDAPP/include/ -l OpenCL
+endif
+
+all: gmm_scoring
+
+gmm_scoring2: gmm_scoring_eStart.cpp
+	g++ -Wno-deprecated-declarations -Wall -g gmm_scoring_eStart.cpp -o gmm_scoring $(OPTIONS)
+
+gmm_scoring: gmm_scoring.cpp .FORCE
+	g++ -Wall -g gmm_scoring.cpp -o gmm_scoring $(OPTIONS)
+
+.FORCE:
+
+clean:
+	rm -rf gmm_scoring 
+
+.PHONY: .FORCE

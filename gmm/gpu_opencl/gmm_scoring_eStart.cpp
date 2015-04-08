@@ -1,3 +1,5 @@
+#pragma GCC diagnostic ignored "-Wdeprecated"
+
 #include <CL/opencl.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -8,7 +10,7 @@
 #include <pthread.h>
 #include <string>
 
-#include "/home/swapnilh/workloads/sirius-suite/utils/timer.h"
+#include "../../utils/timer.h"
 
 #define MAX_SOURCE_SIZE (0x100000)
 
@@ -20,30 +22,22 @@ cl_command_queue __cu2cl_CommandQueue;
 size_t globalWorkSize[3];
 size_t localWorkSize[3];
 
-
-size_t __cu2cl_LoadProgramSource(const char *filename, const char **progSrc) {
-	FILE *f = fopen(filename, "r");
-	fseek(f, 0, SEEK_END);
-	size_t len = (size_t) ftell(f);
-	*progSrc = (const char *) malloc(sizeof(char)*len);
-	rewind(f);
-	fread((void *) *progSrc, len, 1, f);
-	fclose(f);
-	return len;
-}
+const char *getErrorString(cl_int error);
 
 cl_int __cu2cl_EventElapsedTime(float *ms, cl_event start, cl_event end ) {
 	cl_int ret;
 	cl_ulong s, e;
 	//float fs, fe;
-	ret |= clGetEventProfilingInfo(start, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &s, NULL);
+	ret = clGetEventProfilingInfo(start, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &s, NULL);
 	ret |= clGetEventProfilingInfo(end, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &e, NULL);
+	if (ret != CL_SUCCESS) {
+		printf("Error getting profiling info:%s\n",getErrorString(ret));
+		return 0;
+	}
 	s = e - s;
 	*ms = ((float) s)/1000000.0;
 	return ret;
 }
-
-
 
 void __cu2cl_EventElapsedTime(cl_double *g_NDRangePureExecTimeMs, cl_event perf_event ) {
 	cl_ulong start = 0, end = 0;
@@ -89,8 +83,6 @@ cl_mem senone_size = 5120;
 extern "C"
 
 int main(int argc, char *argv[]) {
-//	const char *progSrc;
-//	size_t progLen;
 
 	clGetPlatformIDs(1, &__cu2cl_Platform, NULL);
 	clGetDeviceIDs(__cu2cl_Platform, CL_DEVICE_TYPE_GPU, 1, &__cu2cl_Device, NULL);
@@ -121,11 +113,11 @@ int main(int argc, char *argv[]) {
 
 	cl_mem dev_feat_vect;
 
-	cl_double cuda_elapsedTimedouble;
 	float cuda_elapsedTime;
 	cl_event eStart, eStop;
 	int comp_size = 32;
 	int senone_size = 5120;
+	cl_int ret;
 
 	int means_array_size = senone_size * comp_size * comp_size;
 	int comp_array_size = senone_size * comp_size;
@@ -242,11 +234,6 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	//  cudaEventCreate(&eStart);
-	//  cudaEventCreate(&eStop);
-
-
-
 	// just one time to load acoustic model
 	*(void **)&dev_means_vect = clCreateBuffer(__cu2cl_Context, CL_MEM_READ_WRITE, sizeof(float) * means_array_size, NULL, NULL);
 	*(void **)&dev_precs_vect = clCreateBuffer(__cu2cl_Context, CL_MEM_READ_WRITE, sizeof(float) * means_array_size, NULL, NULL);
@@ -280,19 +267,29 @@ int main(int argc, char *argv[]) {
 	clWaitForEvents(1, &eStop);
 	__cu2cl_EventElapsedTime(&cuda_elapsedTime, eStart, eStop);
 	PRINT_STAT_DOUBLE("host_to_device", cuda_elapsedTime);
-//        printf(",\n\thost_to_device : % 20.16lf\n", cuda_elapsedTime);
-
-
 
 	// Create a program from the kernel source
 	cl_program program = clCreateProgramWithSource(__cu2cl_Context, 1, 
-			(const char **)&source_str, (const size_t *)&source_size, NULL);
-
+			(const char **)&source_str, (const size_t *)&source_size, &ret);
+	if (ret != CL_SUCCESS) {
+		printf("Error creating program:%s ",getErrorString(ret));
+		return 0;
+	}
 	// Build the program
-	clBuildProgram(program, 1, &__cu2cl_Device, NULL, NULL, NULL);
-
+	ret = clBuildProgram(program, 1, &__cu2cl_Device, NULL, NULL, NULL);
+	if (ret != CL_SUCCESS) {
+		printf("Error building program:%s ",getErrorString(ret));
+		char buffer[10240];
+		clGetProgramBuildInfo(program, __cu2cl_Device, CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, NULL);
+		fprintf(stderr, "CL Compilation failed:\n%s", buffer);	
+		return 0;
+	}
 	// Create the OpenCL kernel
-	 cl_kernel __cu2cl_Kernel_computeScore = clCreateKernel(program, "computeScore", NULL);
+	cl_kernel __cu2cl_Kernel_computeScore = clCreateKernel(program, "computeScore", &ret);
+	if (ret != CL_SUCCESS) {
+		printf("Error creating kernel:%s ",getErrorString(ret));
+		return 0;
+	}
 
 	clEnqueueMarker(__cu2cl_CommandQueue, &eStart);
 	clSetKernelArg(__cu2cl_Kernel_computeScore, 0, sizeof(cl_mem), &dev_feat_vect);
@@ -307,12 +304,14 @@ int main(int argc, char *argv[]) {
 	globalWorkSize[0] = grid[0]*localWorkSize[0];
 	globalWorkSize[1] = grid[1]*localWorkSize[1];
 	globalWorkSize[2] = grid[2]*localWorkSize[2];
-	clEnqueueNDRangeKernel(__cu2cl_CommandQueue, __cu2cl_Kernel_computeScore, 3, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	ret = clEnqueueNDRangeKernel(__cu2cl_CommandQueue, __cu2cl_Kernel_computeScore, 3, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
 	clEnqueueMarker(__cu2cl_CommandQueue, &eStop);
+	if (ret != CL_SUCCESS) {
+		printf("Error launching kernel:%s\n",getErrorString(ret));
+		return 0;
+	}
 	clWaitForEvents(1, &eStop);
 
-//	__cu2cl_EventElapsedTime(&cuda_elapsedTimedouble, eStop);
-//        printf(",\n\tgpu_gmm : % 20.16lf\n", cuda_elapsedTimedouble);
 	__cu2cl_EventElapsedTime(&cuda_elapsedTime, eStart, eStop);
 	PRINT_STAT_DOUBLE("gpu_gmm", cuda_elapsedTime);
 
@@ -335,7 +334,6 @@ int main(int argc, char *argv[]) {
 
 	clEnqueueMarker(__cu2cl_CommandQueue, &eStop);
 	clWaitForEvents(1, &eStop);
-	__cu2cl_EventElapsedTime(&cuda_elapsedTime, eStart, eStop);
 
 	free(means_vect);
 	free(precs_vect);
@@ -355,4 +353,80 @@ int main(int argc, char *argv[]) {
 
 	clReleaseCommandQueue(__cu2cl_CommandQueue);
 	clReleaseContext(__cu2cl_Context);
+}
+const char *getErrorString(cl_int error)
+{
+switch(error){
+    // run-time and JIT compiler errors
+    case 0: return "CL_SUCCESS";
+    case -1: return "CL_DEVICE_NOT_FOUND";
+    case -2: return "CL_DEVICE_NOT_AVAILABLE";
+    case -3: return "CL_COMPILER_NOT_AVAILABLE";
+    case -4: return "CL_MEM_OBJECT_ALLOCATION_FAILURE";
+    case -5: return "CL_OUT_OF_RESOURCES";
+    case -6: return "CL_OUT_OF_HOST_MEMORY";
+    case -7: return "CL_PROFILING_INFO_NOT_AVAILABLE";
+    case -8: return "CL_MEM_COPY_OVERLAP";
+    case -9: return "CL_IMAGE_FORMAT_MISMATCH";
+    case -10: return "CL_IMAGE_FORMAT_NOT_SUPPORTED";
+    case -11: return "CL_BUILD_PROGRAM_FAILURE";
+    case -12: return "CL_MAP_FAILURE";
+    case -13: return "CL_MISALIGNED_SUB_BUFFER_OFFSET";
+    case -14: return "CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST";
+    case -15: return "CL_COMPILE_PROGRAM_FAILURE";
+    case -16: return "CL_LINKER_NOT_AVAILABLE";
+    case -17: return "CL_LINK_PROGRAM_FAILURE";
+    case -18: return "CL_DEVICE_PARTITION_FAILED";
+    case -19: return "CL_KERNEL_ARG_INFO_NOT_AVAILABLE";
+
+    // compile-time errors
+    case -30: return "CL_INVALID_VALUE";
+    case -31: return "CL_INVALID_DEVICE_TYPE";
+    case -32: return "CL_INVALID_PLATFORM";
+    case -33: return "CL_INVALID_DEVICE";
+    case -34: return "CL_INVALID_CONTEXT";
+    case -35: return "CL_INVALID_QUEUE_PROPERTIES";
+    case -36: return "CL_INVALID_COMMAND_QUEUE";
+    case -37: return "CL_INVALID_HOST_PTR";
+    case -38: return "CL_INVALID_MEM_OBJECT";
+    case -39: return "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR";
+    case -40: return "CL_INVALID_IMAGE_SIZE";
+    case -41: return "CL_INVALID_SAMPLER";
+    case -42: return "CL_INVALID_BINARY";
+    case -43: return "CL_INVALID_BUILD_OPTIONS";
+    case -44: return "CL_INVALID_PROGRAM";
+    case -45: return "CL_INVALID_PROGRAM_EXECUTABLE";
+    case -46: return "CL_INVALID_KERNEL_NAME";
+    case -47: return "CL_INVALID_KERNEL_DEFINITION";
+    case -48: return "CL_INVALID_KERNEL";
+    case -49: return "CL_INVALID_ARG_INDEX";
+    case -50: return "CL_INVALID_ARG_VALUE";
+    case -51: return "CL_INVALID_ARG_SIZE";
+    case -52: return "CL_INVALID_KERNEL_ARGS";
+    case -53: return "CL_INVALID_WORK_DIMENSION";
+    case -54: return "CL_INVALID_WORK_GROUP_SIZE";
+    case -55: return "CL_INVALID_WORK_ITEM_SIZE";
+    case -56: return "CL_INVALID_GLOBAL_OFFSET";
+    case -57: return "CL_INVALID_EVENT_WAIT_LIST";
+    case -58: return "CL_INVALID_EVENT";
+    case -59: return "CL_INVALID_OPERATION";
+    case -60: return "CL_INVALID_GL_OBJECT";
+    case -61: return "CL_INVALID_BUFFER_SIZE";
+    case -62: return "CL_INVALID_MIP_LEVEL";
+    case -63: return "CL_INVALID_GLOBAL_WORK_SIZE";
+    case -64: return "CL_INVALID_PROPERTY";
+    case -65: return "CL_INVALID_IMAGE_DESCRIPTOR";
+    case -66: return "CL_INVALID_COMPILER_OPTIONS";
+    case -67: return "CL_INVALID_LINKER_OPTIONS";
+    case -68: return "CL_INVALID_DEVICE_PARTITION_COUNT";
+
+    // extension errors
+    case -1000: return "CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR";
+    case -1001: return "CL_PLATFORM_NOT_FOUND_KHR";
+    case -1002: return "CL_INVALID_D3D10_DEVICE_KHR";
+    case -1003: return "CL_INVALID_D3D10_RESOURCE_KHR";
+    case -1004: return "CL_D3D10_RESOURCE_ALREADY_ACQUIRED_KHR";
+    case -1005: return "CL_D3D10_RESOURCE_NOT_ACQUIRED_KHR";
+    default: return "Unknown OpenCL error";
+    }
 }

@@ -890,6 +890,7 @@ int main(int argc, char *argv[]) {
 	}
 	// Build the program
 	ret = clBuildProgram(program, 1, &__cu2cl_Device, NULL, NULL, NULL);
+	printf("BUILT CORRECTLY!\n");
 	if (ret != CL_SUCCESS) {
 		printf("Error building program:%s",getErrorString(ret));
 		char buffer[10240];

@@ -7,8 +7,8 @@ __constant float inverseNaturalLogBase = 9998.841;
 __constant int comp_size = 32;
 __constant int feat_size = 29;
 __constant int senone_size = 5120;
-
- __kernel void    computeScore(const __global float *feature_vect, __global float *means_vect,                 __global float *precs_vect, __global float *weight_vect, __global float *factor_vect,                 __global float *score_vect) {
+ 
+__kernel void    computeScore(const __global float *feature_vect, __global float *means_vect,                 __global float *precs_vect, __global float *weight_vect, __global float *factor_vect,                 __global float *score_vect) {
   int i = get_group_id(0) * get_local_size(0) + get_local_id(0);
 
   if (i < senone_size) {

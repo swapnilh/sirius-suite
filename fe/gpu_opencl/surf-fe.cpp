@@ -22,43 +22,48 @@
 #include <fstream>
 #include <stdio.h>
 #include <pthread.h>
-#include <time.h>
 
 #include "../../utils/timer.h"
-
 #include "opencv2/core/core.hpp"
 #include "opencv2/core/types_c.h"
 #include "opencv2/features2d/features2d.hpp"
 #include "opencv2/nonfree/features2d.hpp"
 #include "opencv2/highgui/highgui.hpp"
-#include "opencv2/nonfree/gpu.hpp"
+#include "opencv2/ocl/ocl.hpp"
+#include "opencv2/nonfree/ocl.hpp"
 #include "opencv2/objdetect/objdetect.hpp"
-#include "opencv2/stitching/stitcher.hpp"
 
 using namespace cv;
+using namespace cv::ocl;
 using namespace std;
 
-vector<Mat> segs;
-vector<vector<KeyPoint> > keys;
-FeatureDetector *detector = new SurfFeatureDetector();
-DescriptorExtractor *extractor = new SurfDescriptorExtractor();
-int iterations;
-
-vector<KeyPoint> exec_feature(const Mat &img) {
+vector<KeyPoint> exec_feature_gpu_warm(const Mat &img_in) {
   vector<KeyPoint> keypoints;
-  detector->detect(img, keypoints);
+  ocl::oclMat img;
+  img.upload(img_in);
 
+  ocl::SURF_OCL detector;
+  detector(ocl::oclMat(img), ocl::oclMat(), keypoints);
   return keypoints;
 }
 
-Mat exec_desc(const Mat &img, vector<KeyPoint> keypoints) {
-  Mat descriptors;
+vector<KeyPoint> exec_feature_gpu(const Mat &img_in) {
+  oclMat keypoints;
+  vector<KeyPoint> keys;
+  oclMat img;
+  tic();
+  img.upload(img_in);
+  PRINT_STAT_DOUBLE("host_to_device_0", toc());
 
-  extractor->compute(img, keypoints, descriptors);
+  ocl::SURF_OCL detector;
+  tic();
+  detector(ocl::oclMat(img), oclMat(), keypoints);
+  PRINT_STAT_DOUBLE("gpu_fe", toc());
 
-  descriptors.convertTo(descriptors, CV_32F);
-
-  return descriptors;
+  tic();
+  detector.downloadKeypoints(keypoints, keys);
+  PRINT_STAT_DOUBLE("device_to_host_0", toc());
+  return keys;
 }
 
 int main(int argc, char **argv) {
@@ -67,6 +72,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Usage: %s [INPUT FILE]\n\n", argv[0]);
     exit(0);
   }
+  // data
+  STATS_INIT("kernel", "gpu_feature_extraction");
+  PRINT_STAT_STRING("abrv", "gpu_fe");
 
   // Generate test keys
   Mat img = imread(argv[1], CV_LOAD_IMAGE_GRAYSCALE);
@@ -75,33 +83,24 @@ int main(int argc, char **argv) {
     exit(-1);
   }
 
-  STATS_INIT("kernel", "feature_description");
-  PRINT_STAT_STRING("abrv", "fd");
-
   PRINT_STAT_INT("rows", img.rows);
   PRINT_STAT_INT("columns", img.cols);
 
+  // warmup
   tic();
-  vector<KeyPoint> key = exec_feature(img);
-  PRINT_STAT_DOUBLE("fe", toc());
+  exec_feature_gpu_warm(img);
+  PRINT_STAT_DOUBLE("gpu_warm-up", toc());
 
-  tic();
-  Mat testDesc = exec_desc(img, key);
-  PRINT_STAT_DOUBLE("fd", toc());
+  vector<KeyPoint> key = exec_feature_gpu(img);
 
   STATS_END();
 
 #ifdef TESTING
-  FILE *f = fopen("../input/surf-fd.baseline", "w");
-  printf("TESTING\n");	
-  fprintf(f, "number of descriptors: %d\n", testDesc.size().height);
+  Mat output;
 
-  fclose(f);
+  drawKeypoints(img, key, output, CV_RGB(255, 0, 0));
+  imwrite("../input/surf-fe.ocl.jpg", output);
 #endif
-
-  // Clean up
-  delete detector;
-  delete extractor;
 
   return 0;
 }

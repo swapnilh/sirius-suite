@@ -53,7 +53,7 @@ def main( args ):
         print "Usage: ./collect-stats.py <top-directory of kernels> <# of runs>"
         return
 
-    kernels = [ 'fe', 'fd', 'gmm', 'regex', 'stemmer', 'crf', 'dnn-asr']
+    kernels = [ 'fe', 'fd', 'gmm']#, 'stemmer']
     platforms = [ 'baseline', 'pthread', 'gpu_opencl' ]
 
     # top directory of kernels
@@ -79,6 +79,7 @@ def main( args ):
                 continue
             os.chdir(plat)
             for i in range(1, LOOP):
+                shcmd('make clean')
                 shcmd('make test')
             os.chdir(kroot)
         os.chdir(root)

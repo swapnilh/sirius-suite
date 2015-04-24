@@ -2,7 +2,6 @@
 #define FALSE 0 
 #define INC 32 
 
-struct stemmer;
 
 struct stemmer {
 	char b[INC + 1]; 
@@ -12,7 +11,7 @@ struct stemmer {
 
 
 
-  int cons1(struct stemmer *z, int i) {
+inline int cons1(   __global struct stemmer *z, int i) {
 	switch (z->b[i]) {
 		case 'a':
 		case 'e':
@@ -25,7 +24,7 @@ struct stemmer {
 	}
 }
 
-  int cons(struct stemmer *z, int i) {
+ inline  int cons(   __global struct stemmer *z, int i) {
 	switch (z->b[i]) {
 		case 'a':
 		case 'e':
@@ -40,7 +39,7 @@ struct stemmer {
 	}
 }
 
-  int m(struct stemmer *z) {
+ inline  int m(   __global struct stemmer *z) {
 	int n = 0;
 	int i = 0;
 	int j = z->j;
@@ -68,7 +67,7 @@ struct stemmer {
 }
 
 
-  int vowelinstem(struct stemmer *z) {
+ inline  int vowelinstem(   __global struct stemmer *z) {
 	int j = z->j;
 	int i;
 	for (i = 0; i <= j; i++)
@@ -76,14 +75,14 @@ struct stemmer {
 	return FALSE;
 }
 
-  int doublec(struct stemmer *z, int j) {
-	char *b = z->b;
+ inline  int doublec(   __global struct stemmer *z, int j) {
+//	char *b = z->b;
 	if (j < 1) return FALSE;
-	if (b[j] != b[j - 1]) return FALSE;
+	if (z->b[j] != z->b[j - 1]) return FALSE;
 	return cons(z, j);
 }
 
-  int cvc(struct stemmer *z, int i) {
+ inline  int cvc(   __global struct stemmer *z, int i) {
 	if (i < 2 || !cons(z, i) || cons(z, i - 1) || !cons(z, i - 2)) return FALSE;
 	{
 		int ch = z->b[i];
@@ -92,60 +91,59 @@ struct stemmer {
 	return TRUE;
 }
 
-
-  int memcmp1(const void *buffer1, const void *buffer2, int count) {
+ inline  int memcmp1(__global char *buffer1, char *buffer2, int start, int count) {
 	if (!count) return (0);
-	while (--count && *(char *)buffer1 == *(char *)buffer2) {
-		buffer1 = (char *)buffer1 + 1;
-		buffer2 = (char *)buffer2 + 1;
+	int i = start, j = 1; 	// 1st element of buffer 2 contains the size
+	while (--count && buffer1[i] == buffer2[j]) {
+		i++;
+		j++;
 	}
-	return (*((unsigned char *)buffer1) - *((unsigned char *)buffer2));
+	return buffer1[i] - buffer2[j];
 }
 
-  int ends(struct stemmer *z, char *s) {
+ inline  int ends(__global struct stemmer *z, char *s) {
 	int length = s[0];
-	char *b = z->b;
 	int k = z->k;
-	if (s[length] != b[k]) return FALSE; 
+	if (s[length] != z->b[k]) return FALSE; 
 	if (length > k + 1) return FALSE;
-	if (memcmp1(b + k - length + 1, s + 1, length) != 0) return FALSE;
+	if (memcmp1(z->b, s , k - length +1, length) != 0) return FALSE;
 	z->j = k - length;
 	return TRUE;
 }
 
-void memmove1(void *dst, const void *src, int count) {
-	char *dst_t;
-	char *src_t;
-	if ((unsigned char *)dst <= (unsigned char *)src ||
-			(unsigned char *)dst >= ((unsigned char *)src + count)) {
-		dst_t = (char *)dst;
-		src_t = (char *)src;
+void memmove1(__global char *dst, char *src, int start, int count) {
+	int i = start, j = 1;
+	// Changing memmove1 to make it easier to write OpenCL code, and this works as there cannot be any overlap possible between the two strings
+//	if (dst <= src || dst >= (src + count)) {
 		while (count--) {
-			*dst_t++ = *src_t++;
+			dst[i] = src[j];
+			i++;
+			j++;
 		}
-	} else {
-		dst_t = (char *)dst + count - 1;
-		src_t = (char *)src + count - 1;
+	/*
+	}
+	else {
+		dst_t = dst + count - 1;
+		src_t = src + count - 1;
 		while (count--) {
 			*dst_t-- = *src_t--;
 		}
-	}
+	}*/
 }
 
-  void setto(struct stemmer *z, char *s) {
+ inline  void setto(   __global struct stemmer *z,  char *s) {
 	int length = s[0];
 	int j = z->j;
-	memmove1(z->b + j + 1, s + 1, length);
+	memmove1(z->b , s , j + 1, length);
 	z->k = j + length;
 }
 
 
-  void r(struct stemmer *z, char *s) {
+ inline  void r(   __global struct stemmer *z, char *s) {
 	if (m(z) > 0) setto(z, s);
 }
-     void step1ab(struct stemmer *z) {
-   char *b = z->b;
-   if (b[z->k] == 's') {
+ inline     void step1ab(   __global struct stemmer *z) {
+   if (z->b[z->k] == 's') {
    if (ends(z,
    "\04"
    "sses"))
@@ -156,7 +154,7 @@ void memmove1(void *dst, const void *src, int count) {
    setto(z,
    "\01"
    "i");
-   else if (b[z->k - 1] != 's')
+   else if (z->b[z->k - 1] != 's')
    z->k--;
    }
    if (ends(z,
@@ -192,7 +190,7 @@ void memmove1(void *dst, const void *src, int count) {
    else if (doublec(z, z->k)) {
    z->k--;
    {
-   int ch = b[z->k];
+   int ch = z->b[z->k];
    if (ch == 'l' || ch == 's' || ch == 'z') z->k++;
    }
    } else if (m(z) == 1 && cvc(z, z->k))
@@ -203,7 +201,7 @@ void memmove1(void *dst, const void *src, int count) {
    }
 
 
-     void step1c(struct stemmer *z) {
+    inline  void step1c(   __global struct stemmer *z) {
    if (ends(z,
    "\01"
    "y") &&
@@ -211,7 +209,7 @@ void memmove1(void *dst, const void *src, int count) {
    z->b[z->k] = 'i';
    }
 
-     void step2(struct stemmer *z) {
+ inline     void step2(   __global struct stemmer *z) {
    switch (z->b[z->k - 1]) {
 case 'a':
 if (ends(z,
@@ -402,7 +400,7 @@ if (ends(z,
 }
 }
 
-  void step3(struct stemmer *z) {
+ inline  void step3(   __global struct stemmer *z) {
 	switch (z->b[z->k]) {
 		case 'e':
 			if (ends(z,
@@ -472,7 +470,7 @@ if (ends(z,
 }
 
 
-  void step4(struct stemmer *z) {
+ inline  void step4(   __global struct stemmer *z) {
 	switch (z->b[z->k - 1]) {
 		case 'a':
 			if (ends(z,
@@ -582,14 +580,15 @@ if (ends(z,
 }
 
 
-  void step5(struct stemmer *z) {
-	char *b = z->b;
+inline void step5(__global struct stemmer *z) {
+//	char *b = z->b;
 	z->j = z->k;
-	if (b[z->k] == 'e') {
+	if (z->b[z->k] == 'e') {
 		int a = m(z);
-		if (a > 1 || a == 1 && !cvc(z, z->k - 1)) z->k--;
+		if (a > 1 || a == 1 && !cvc(z, z->k - 1)) 
+		z->k--;
 	}
-	if (b[z->k] == 'l' && doublec(z, z->k) && m(z) > 1) z->k--;
+	if (z->b[z->k] == 'l' && doublec(z, z->k) && m(z) > 1) z->k--;
 }
 
 __kernel void stem_gpu(__global struct stemmer *stem_list, int words) {
@@ -598,13 +597,13 @@ __kernel void stem_gpu(__global struct stemmer *stem_list, int words) {
 		if (stem_list[tid].k <= 1) {
 			return;
 		}
-		/*
+		
 		   step1ab(&(stem_list[tid]));
 		   step1c(&(stem_list[tid]));
 		   step2(&(stem_list[tid]));
 		   step3(&(stem_list[tid]));
 		   step4(&(stem_list[tid]));
-		*/	
+			
 		   step5(&(stem_list[tid])); 
 		   stem_list[tid].b[stem_list[tid].k + 1] = 0;
 	}

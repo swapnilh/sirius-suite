@@ -5,7 +5,7 @@ LINK_FLAGS += -I/opt/AMDAPP/include/ -l OpenCL
 INPUT = ../input/voc.txt
 
 # File names
-EXEC = porter
+EXEC = stem_porter
 SOURCES = porter.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 

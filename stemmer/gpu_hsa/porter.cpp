@@ -39,7 +39,7 @@
 #include <sys/time.h>
 
 #include "../../utils/timer.h"
-#include "porter2.h"
+#include "porter.h"
 
 /* You will probably want to move the following declarations to a central
   header file.
@@ -245,9 +245,9 @@ int main(int argc, char *argv[]) {
 //	__cu2cl_CommandQueue = clCreateCommandQueue(__cu2cl_Context, __cu2cl_Device, CL_QUEUE_PROFILING_ENABLE, NULL);
 
 	// Load the kernel source code into the array source_str
-	FILE *fp_kernel;
-	char *source_str;
-	size_t source_size;
+//	FILE *fp_kernel;
+//	char *source_str;
+//	size_t source_size;
 
 /*	fp_kernel = fopen("porter.cl", "r");
 	if (!fp_kernel) {
@@ -292,7 +292,7 @@ int main(int argc, char *argv[]) {
 	PRINT_STAT_STRING("abrv", "gpu_stemmer");
 
 //	cl_event eStart, eStop;
-	float cuda_elapsedTime;
+//	float cuda_elapsedTime;
 
 	// allocate data
 	FILE *f;
